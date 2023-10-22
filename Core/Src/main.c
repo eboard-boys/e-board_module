@@ -140,9 +140,19 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	//HAL_ADC_Start(&hadc1);
-	//HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-	//pot = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+	pot = HAL_ADC_GetValue(&hadc1);
+
+	pot = (pot - 1500) / 30;
+	if (pot < 0)
+	{
+		pot = 0;
+	}
+	else if (pot > 80)
+	{
+		pot = 80;
+	}
 
 
 
@@ -150,12 +160,12 @@ int main(void)
 	sprintf(msg, "Pot: %i\r\n", pot);
 	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 
-	if (HAL_UART_Receive(&huart1, &pot, 1, HAL_MAX_DELAY) == HAL_OK) {
-		Throttle = (pot/1.25) + 80;
-		TIM3->CCR4 = Throttle;
-	} else {
+	//if (HAL_UART_Receive(&huart1, &pot, 1, HAL_MAX_DELAY) == HAL_OK) {
+	Throttle = pot + 80;
+	TIM3->CCR4 = Throttle;
+	//} else {
 	    // Error handling if data reception fails
-	}
+	//}
 	HAL_Delay(10);
     /* USER CODE END WHILE */
 
