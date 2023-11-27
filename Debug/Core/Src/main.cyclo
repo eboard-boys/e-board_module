@@ -9,9 +9,9 @@
 ../Core/Src/main.c:507:13:MX_GPIO_Init	1
 ../Core/Src/main.c:541:6:Lora_Init	1
 ../Core/Src/main.c:553:6:Lora_Send_Data	1
-../Core/Src/main.c:560:6:MPU_6050_Init	5
-../Core/Src/main.c:622:6:MPU_Get_Accel	2
-../Core/Src/main.c:656:6:MPU_Get_Gyro	2
-../Core/Src/main.c:685:6:Get_Pos	1
-../Core/Src/main.c:741:6:Get_Speed	2
-../Core/Src/main.c:792:6:Error_Handler	1
+../Core/Src/main.c:561:6:MPU_6050_Init	5
+../Core/Src/main.c:623:6:MPU_Get_Accel	2
+../Core/Src/main.c:657:6:MPU_Get_Gyro	2
+../Core/Src/main.c:686:6:Get_Pos	1
+../Core/Src/main.c:742:6:Get_Speed	2
+../Core/Src/main.c:793:6:Error_Handler	1

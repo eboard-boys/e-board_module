@@ -541,6 +541,14 @@ static void MX_GPIO_Init(void)
 void Lora_Init(void)
 {
 	char msg[100] = "";
+	sprintf(msg, "AT+MODE=0\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+	sprintf(msg, "AT+IPR=115200\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
 	sprintf(msg, "AT+ADDRESS=24\r\n");
 	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 	HAL_Delay(500);
@@ -553,8 +561,9 @@ void Lora_Init(void)
 void Lora_Send_Data(char data[])
 {
 	char msg[100] = "";
-	sprintf(msg, "AT+SEND=,%i,%i,%s", ESP_LORA_ADDRESS, strlen(data), data);
+	sprintf(msg, "AT+SEND=%i,%i,%s\r\n", ESP_LORA_ADDRESS, strlen(data), data);
 	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(1000);
 }
 
 void MPU_6050_Init(void)
