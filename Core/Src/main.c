@@ -45,6 +45,7 @@
 #define GYRO_ADDR 0x43			 // Gyroscope Data starting register 0x43 - 0x48
 #define ACCEL_ADDR 0x3B			 // Accelerometer Data starting register 0x3B - 0x40
 #define I2C_DELAY 50			 // I2C Delay 50ms
+#define ESP_LORA_ADDRESS 25
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -79,6 +80,8 @@ static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
+void Lora_Init(void);
+void Lora_Send_Data(char data[]);
 void MPU_6050_Init(void);
 void MPU_Get_Accel(void);
 void MPU_Get_Gyro(void);
@@ -131,7 +134,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start(&hadc1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
-  //MPU_6050_Init();
+  Lora_Init();
+  MPU_6050_Init();
   HAL_TIM_Base_Start(&htim2);
   float sec = 0;
   /* USER CODE END 2 */
@@ -140,32 +144,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	HAL_ADC_Start(&hadc1);
-	HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-	pot = HAL_ADC_GetValue(&hadc1);
+	//HAL_ADC_Start(&hadc1);
+	//HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+	//pot = HAL_ADC_GetValue(&hadc1);
 
-	pot = (pot - 1500) / 30;
-	if (pot < 0)
-	{
-		pot = 0;
-	}
-	else if (pot > 80)
-	{
-		pot = 80;
-	}
-
-
-
-	//Get_Speed();
-	sprintf(msg, "Pot: %i\r\n", pot);
-	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-
-	//if (HAL_UART_Receive(&huart1, &pot, 1, HAL_MAX_DELAY) == HAL_OK) {
-	Throttle = pot + 80;
+	Throttle = 80;
 	TIM3->CCR4 = Throttle;
-	//} else {
-	    // Error handling if data reception fails
-	//}
+
+	sprintf(msg, "p%i", Throttle);
+	Lora_Send_Data(msg);
 	HAL_Delay(10);
     /* USER CODE END WHILE */
 
@@ -550,6 +537,26 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void Lora_Init(void)
+{
+	char msg[100] = "";
+	sprintf(msg, "AT+ADDRESS=24\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+	sprintf(msg, "AT+ADDRESS?\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+}
+
+void Lora_Send_Data(char data[])
+{
+	char msg[100] = "";
+	sprintf(msg, "AT+SEND=,%i,%i,%s", ESP_LORA_ADDRESS, strlen(data), data);
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
 void MPU_6050_Init(void)
 {
 	HAL_StatusTypeDef ret = HAL_ERROR;
@@ -771,8 +778,8 @@ void Get_Speed(void)
 	}
 
 	//Speed = abs(sqrt((vx * vx) + (vy * vy) + (vz * vz))) + Speedp;
-	//sprintf((char*)data, "Roll: %f Pitch %f \r\n", roll, pitch);
-	//HAL_UART_Transmit(&huart2, data, strlen(data), I2C_DELAY);
+	sprintf((char*)data, "Roll: %f Pitch %f \r\n", roll, pitch);
+	HAL_UART_Transmit(&huart2, data, strlen(data), I2C_DELAY);
 	//sprintf((char*)data, "%i mph\r\n", Speed);
 	//HAL_UART_Transmit(&huart2, data, strlen(data), I2C_DELAY);
 }
