@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -38,14 +39,9 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define MPU_6050_ADDR (0x68	<< 1)// I2C Address shifted 1 bit to the left per HAL I2C 8 bit requirement
-#define POWER_CONFIG_ADDR 0x6B   // Power config for reset and clock select
-#define GYRO_CONFIG_ADDR 0x1B    // Gyroscope config register
-#define ACCEL_CONFIG_ADDR 0x1C   // Accelerometer config register
-#define GYRO_ADDR 0x43			 // Gyroscope Data starting register 0x43 - 0x48
-#define ACCEL_ADDR 0x3B			 // Accelerometer Data starting register 0x3B - 0x40
 #define I2C_DELAY 50			 // I2C Delay 50ms
-#define ESP_LORA_ADDRESS 25
+#define STM_LORA_ADDRESS 24      // Address of the STM Lora chip
+#define ESP_LORA_ADDRESS 25      // Address of the ESP Lora chip
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -59,15 +55,31 @@ TIM_HandleTypeDef htim3;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for readThrottle */
+osThreadId_t readThrottleHandle;
+const osThreadAttr_t readThrottle_attributes = {
+  .name = "readThrottle",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for sendSpeed */
+osThreadId_t sendSpeedHandle;
+const osThreadAttr_t sendSpeed_attributes = {
+  .name = "sendSpeed",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* USER CODE BEGIN PV */
-uint8_t buf[6];
-float elapsedTime, currentTime, previousTime;
-float roll, pitch, yaw;
-float gyroAngleX, gyroAngleY, gyroAngleZ;
-int Speed;
-float AccelErrorX;
-float AccelErrorY;
-float AccelErrorZ;
+char UART1_rxBuffer[25]; // Raw data from LORA RX
+char receive_data[4];    // Data stripped from LORA RX
+float throttle, speed;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,14 +91,14 @@ static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
+void StartDefaultTask(void *argument);
+void ReadThrottle(void *argument);
+void SendSpeed(void *argument);
+
 /* USER CODE BEGIN PFP */
 void Lora_Init(void);
 void Lora_Send_Data(char data[]);
-void MPU_6050_Init(void);
-void MPU_Get_Accel(void);
-void MPU_Get_Gyro(void);
-void Get_Pos(void);
-void Get_Speed(void);
+void Parse_Recieve_Data(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -110,10 +122,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  char msg[50];
-  int pot;
-  int Throttle;
-  Speed = 0;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -132,28 +140,55 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_ADC_Start(&hadc1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   Lora_Init();
-  MPU_6050_Init();
-  HAL_TIM_Base_Start(&htim2);
-  float sec = 0;
   /* USER CODE END 2 */
 
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* creation of readThrottle */
+  readThrottleHandle = osThreadNew(ReadThrottle, NULL, &readThrottle_attributes);
+
+  /* creation of sendSpeed */
+  sendSpeedHandle = osThreadNew(SendSpeed, NULL, &sendSpeed_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	//HAL_ADC_Start(&hadc1);
-	//HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-	//pot = HAL_ADC_GetValue(&hadc1);
-
-	Throttle = 80;
-	TIM3->CCR4 = Throttle;
-
-	sprintf(msg, "p%i", Throttle);
-	Lora_Send_Data(msg);
-	HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -540,259 +575,162 @@ static void MX_GPIO_Init(void)
 
 void Lora_Init(void)
 {
+	// Set LORA Chip To Transmit/Receive Mode
 	char msg[100] = "";
-	sprintf(msg, "AT+MODE=0\r\n");
+	// Sets Parameters to:
+	// Spreading Factor: 7
+	// Bandwidth: 500 KHz
+	// Coding Rate: 1
+	// Programmed Preamble: 10
+	// This favors speed over dependabilitySerial2.println("AT+PARAMETER=7,9,1,4");
+	sprintf(msg, "AT+PARAMETER=10,8,1,4\r\n");
 	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-	HAL_Delay(500);
+	HAL_Delay(1000);
 
-	sprintf(msg, "AT+IPR=115200\r\n");
-	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-	HAL_Delay(500);
-
+	// Sets LORA Chip address to 24
 	sprintf(msg, "AT+ADDRESS=24\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+	// Reads back address to verify setup
+	sprintf(msg, "AT+NETWORKID=3\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+	sprintf(msg, "AT+CPIN?\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+
+	sprintf(msg, "AT+CRFOP?\r\n");
 	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 	HAL_Delay(500);
 
 	sprintf(msg, "AT+ADDRESS?\r\n");
 	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 	HAL_Delay(500);
+
+	sprintf(msg, "AT+NETWORKID?\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+	sprintf(msg, "AT+BAND?\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
+
+	sprintf(msg, "AT+MODE=0\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(500);
 }
 
 void Lora_Send_Data(char data[])
 {
+	// Combines message to be sent with the data passed in
 	char msg[100] = "";
 	sprintf(msg, "AT+SEND=%i,%i,%s\r\n", ESP_LORA_ADDRESS, strlen(data), data);
 	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-	HAL_Delay(1000);
 }
 
-void MPU_6050_Init(void)
+void Parse_Recieve_Data(void)
 {
-	HAL_StatusTypeDef ret = HAL_ERROR;
-	//uint8_t data = 0;
-	//ret = HAL_I2C_Mem_Write(&hi2c1, MPU_ADDR, POWER_CONFIG_ADDR, I2C_MEMADD_SIZE_8BIT, &data, I2C_MEMADD_SIZE_8BIT, I2C_DELAY);
-	uint8_t data = 0x00;
-	ret = HAL_I2C_Mem_Write(&hi2c1, MPU_6050_ADDR, POWER_CONFIG_ADDR, I2C_MEMADD_SIZE_8BIT, &data, I2C_MEMADD_SIZE_8BIT, I2C_DELAY);
-	if (ret != HAL_OK)
-	{
-		HAL_UART_Transmit(&huart2, (uint8_t*)"Error Initializing MPU_6050\n", strlen("Error Initializing MPU_6050\n"), I2C_DELAY);
-	}
-	else
-	{
-		data = 0x08;
-		ret = HAL_I2C_Mem_Write(&hi2c1, MPU_6050_ADDR, GYRO_CONFIG_ADDR, I2C_MEMADD_SIZE_8BIT, &data, I2C_MEMADD_SIZE_8BIT, I2C_DELAY);
-		if (ret != HAL_OK)
-		{
-			HAL_UART_Transmit(&huart2, (uint8_t*)"Error Initializing Gyro\n", strlen("Error Initializing Gyro\n"), I2C_DELAY);
-		}
-		else
-		{
-			ret = HAL_I2C_Mem_Write(&hi2c1, MPU_6050_ADDR, ACCEL_CONFIG_ADDR, I2C_MEMADD_SIZE_8BIT, &data, I2C_MEMADD_SIZE_8BIT, I2C_DELAY);
-			if (ret != HAL_OK)
-			{
-				HAL_UART_Transmit(&huart2, (uint8_t*)"Error Initializing Accel\n", strlen("Error Initializing Accel\n"), I2C_DELAY);
-			}
-			else
-			{
-				HAL_UART_Transmit(&huart2, (uint8_t*)"Initialized MPU_6050!\n", strlen("Initialized MPU_6050!\n"), I2C_DELAY);
-			}
-		}
-	}
-
-	int x = 0;
-	AccelErrorX = 0;
-	AccelErrorY = 0;
-	AccelErrorZ = 0;
-	int16_t dAccX;
-	int16_t dAccY;
-	int16_t dAccZ;
-	while (x < 100)
-	{
-		HAL_I2C_Mem_Read(&hi2c1, MPU_6050_ADDR, ACCEL_ADDR, I2C_MEMADD_SIZE_8BIT, buf, 6, I2C_DELAY);
-		dAccX = ((int16_t)buf[0] << 8) | (buf[1]);
-		dAccY = ((int16_t)buf[2] << 8) | (buf[3]);
-		dAccZ = ((int16_t)buf[4] << 8) | (buf[5]);
-
-		float AccX = dAccX / 8192.0;
-		float AccY = dAccY / 8192.0;
-		float AccZ = dAccZ / 8192.0;
-		AccelErrorX += AccX;
-		AccelErrorY += AccY;
-		AccelErrorZ += AccZ;
-		x++;
-	}
-
-	AccelErrorX = AccelErrorX / 100;
-	AccelErrorY = AccelErrorY / 100;
-	AccelErrorZ = AccelErrorZ / 100;
-	return;
+	char data[4];
 }
 
-void MPU_Get_Accel(void)
-{
-	HAL_StatusTypeDef ret = HAL_ERROR;
-	int16_t dAccX;
-	int16_t dAccY;
-	int16_t dAccZ;
-
-	ret = HAL_I2C_Mem_Read(&hi2c1, MPU_6050_ADDR, ACCEL_ADDR, I2C_MEMADD_SIZE_8BIT, buf, 6, I2C_DELAY);
-
-;
-	if (ret != HAL_OK)
-	{
-		HAL_UART_Transmit(&huart2, (uint8_t*)"Error Reading Accel\n", strlen("Error Reading Accel\n"), I2C_DELAY);
-	}
-	else
-	{
-		dAccX = ((int16_t)buf[0] << 8) | (buf[1]);
-		dAccY = ((int16_t)buf[2] << 8) | (buf[3]);
-		dAccZ = ((int16_t)buf[4] << 8) | (buf[5]);
-
-		float AccX = dAccX / 8192.0;
-		float AccY = dAccY / 8192.0;
-		float AccZ = dAccZ / 8192.0;
-
-		char data[25];
-		float Speedp = Speed;
-
-		Speed = (AccY * 1) + Speedp;
-		sprintf((char*)data, "%f Y: %f Z: %f\r\n", AccX, AccY, AccZ);
-		HAL_UART_Transmit(&huart2, data, strlen(data), I2C_DELAY);
-	}
-	return;
-}
-
-void MPU_Get_Gyro(void)
-{
-	HAL_StatusTypeDef ret = HAL_ERROR;
-	float gyroX = 0;
-	float gyroY = 0;
-	float gyroZ = 0;
-
-	ret = HAL_I2C_Mem_Read(&hi2c1, MPU_6050_ADDR, GYRO_ADDR, I2C_MEMADD_SIZE_8BIT, buf, 6, I2C_DELAY);
-	if (ret != HAL_OK)
-	{
-		HAL_UART_Transmit(&huart2, (uint8_t*)"Error Reading Gyro\n", strlen("Error Reading Gyro\n"), I2C_DELAY);
-	}
-	else
-	{
-		gyroX = ((int16_t)buf[0] << 8) | (buf[1]);
-		gyroY = ((int16_t)buf[2] << 8) | (buf[3]);
-		gyroZ = ((int16_t)buf[4] << 8) | (buf[5]);
-
-		gyroX = gyroX / 65.5;
-		gyroY = gyroY / 65.5;
-		gyroZ = gyroZ / 65.5;
-
-		char data[256];
-		sprintf((char*)data, "Gyroscope X: %f Y: %f Z: %f\r\n", gyroX, gyroY, gyroZ);
-		HAL_UART_Transmit(&huart2, data, strlen((char*)data), I2C_DELAY);
-	}
-	return;
-}
-
-void Get_Pos(void)
-{
-	float accAngleX, accAngleY;
-	HAL_StatusTypeDef ret = HAL_ERROR;
-	int16_t dAccX;
-	int16_t dAccY;
-	int16_t dAccZ;
-	int16_t dGyroX;
-	int16_t dGyroY;
-	int16_t dGyroZ;
-
-	ret = HAL_I2C_Mem_Read(&hi2c1, MPU_6050_ADDR, ACCEL_ADDR, I2C_MEMADD_SIZE_8BIT, buf, 6, I2C_DELAY);
-	dAccX = ((int16_t)buf[0] << 8) | (buf[1]);
-	dAccY = ((int16_t)buf[2] << 8) | (buf[3]);
-	dAccZ = ((int16_t)buf[4] << 8) | (buf[5]);
-
-	float AccX = dAccX / 8192.0;
-	float AccY = dAccY / 8192.0;
-	float AccZ = dAccZ / 8192.0;
-
-	accAngleX = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / M_PI) - 0.58; // AccErrorX ~(0.58) See the calculate_IMU_error()custom function for more details
-	accAngleY = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / M_PI) + 1.58; // AccErrorY ~(-1.58)
-
-	previousTime = currentTime;        // Previous time is stored before the actual time read
-	currentTime = TIM2->CNT;       // Current time actual time read
-	currentTime = currentTime / 8;
-	elapsedTime = (currentTime - previousTime) / 1000; // Divide by 1000 to get seconds
-
-	ret = HAL_I2C_Mem_Read(&hi2c1, MPU_6050_ADDR, GYRO_ADDR, I2C_MEMADD_SIZE_8BIT, buf, 6, I2C_DELAY);
-	dGyroX = ((int16_t)buf[0] << 8) | (buf[1]);
-	dGyroY = ((int16_t)buf[2] << 8) | (buf[3]);
-	dGyroZ = ((int16_t)buf[4] << 8) | (buf[5]);
-
-	float GyroX = dGyroX / 65.5;
-	float GyroY = dGyroY / 65.5;
-	float GyroZ = dGyroZ / 65.5;
-
-	GyroX = GyroX + 0.56; // GyroErrorX ~(-0.56)
-	GyroY = GyroY - 2; // GyroErrorY ~(2)
-	GyroZ = GyroZ + 0.79; // GyroErrorZ ~ (-0.8)
-
-	// Currently the raw values are in degrees per seconds, deg/s, so we need to multiply by sendonds (s) to get the angle in degrees
-	gyroAngleX = gyroAngleX + GyroX * elapsedTime; // deg/s * s = deg
-	gyroAngleY = gyroAngleY + GyroY * elapsedTime;
-	yaw =  yaw + GyroZ * elapsedTime;
-	// Complementary filter - combine acceleromter and gyro angle values
-	roll = 0.96 * gyroAngleX + 0.04 * accAngleX;
-	pitch = 0.96 * gyroAngleY + 0.04 * accAngleY;
-
-	char data[256];
-	sprintf((char*)data, "Acell X: %f Y: %f Z: %f\nGyroscope X: %f Y: %f Z: %f\r\nMilli: %f\r\n", AccX, AccY, AccZ, GyroX, GyroY, GyroZ, elapsedTime);
-	HAL_UART_Transmit(&huart2, data, strlen((char*)data), I2C_DELAY);
-
-	return;
-}
-
-void Get_Speed(void)
-{
-	HAL_StatusTypeDef ret = HAL_ERROR;
-	int16_t dAccX;
-	int16_t dAccY;
-	int16_t dAccZ;
-
-
-	ret = HAL_I2C_Mem_Read(&hi2c1, MPU_6050_ADDR, ACCEL_ADDR, I2C_MEMADD_SIZE_8BIT, buf, 6, I2C_DELAY);
-	dAccX = ((int16_t)buf[0] << 8) | (buf[1]);
-	dAccY = ((int16_t)buf[2] << 8) | (buf[3]);
-	dAccZ = ((int16_t)buf[4] << 8) | (buf[5]);
-
-	float AccX = (dAccX / 8192.0) - AccelErrorX;
-	float AccY = (dAccY / 8192.0) - AccelErrorY;
-	float AccZ = (dAccZ / 8192.0) - AccelErrorZ;
-
-	roll = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / M_PI) - AccelErrorX; // AccErrorX ~(0.58) See the calculate_IMU_error()custom function for more details
-	pitch = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / M_PI) - AccelErrorY; // AccErrorY ~(-1.58)
-
-	previousTime = currentTime;        // Previous time is stored before the actual time read
-	currentTime = TIM2->CNT;       // Current time actual time read
-	currentTime = currentTime / 8;
-	elapsedTime = (currentTime - previousTime) / 1000; // Divide by 1000 to get seconds
-
-	char data[256];
-	//float Speedp = Speed;
-	float SpeedX;
-	float SpeedY;
-	SpeedX = (AccX * 20);
-	SpeedY = (AccY * 20);
-
-	Speed = SpeedX - SpeedY;
-
-	if (Speed < 0)
-	{
-		Speed *= -1;
-	}
-
-	//Speed = abs(sqrt((vx * vx) + (vy * vy) + (vz * vz))) + Speedp;
-	sprintf((char*)data, "Roll: %f Pitch %f \r\n", roll, pitch);
-	HAL_UART_Transmit(&huart2, data, strlen(data), I2C_DELAY);
-	//sprintf((char*)data, "%i mph\r\n", Speed);
-	//HAL_UART_Transmit(&huart2, data, strlen(data), I2C_DELAY);
-}
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_ReadThrottle */
+/**
+* @brief Function implementing the readThrottle thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_ReadThrottle */
+void ReadThrottle(void *argument)
+{
+  /* USER CODE BEGIN ReadThrottle */
+  /* Infinite loop */
+  for(;;)
+  {
+	char msg[50];
+	char Rx_data[100];
+	int Throttle;
+	char oldMSG[25];
+	strncpy(oldMSG, UART1_rxBuffer, 25);
+	HAL_UART_Receive_IT(&huart1, UART1_rxBuffer, 25);
+	if (UART1_rxBuffer != oldMSG)
+	{
+		HAL_UART_Transmit(&huart2, UART1_rxBuffer, 25, 100);
+		HAL_UART_Transmit(&huart2, oldMSG, 25, 100);
+	}
+	Throttle = 80;
+	TIM3->CCR4 = Throttle;
+	sprintf(msg, "Set Throttle to : %i\r\n", Throttle);
+	HAL_UART_Transmit(&huart2, msg, strlen(msg), I2C_DELAY);
+    osDelay(1);
+  }
+  /* USER CODE END ReadThrottle */
+}
+
+/* USER CODE BEGIN Header_SendSpeed */
+/**
+* @brief Function implementing the sendSpeed thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_SendSpeed */
+void SendSpeed(void *argument)
+
+{
+  /* USER CODE BEGIN SendSpeed */
+  /* Infinite loop */
+  for(;;)
+  {
+	// Calculate Speed
+	char Speed[2] = "20";
+	Lora_Send_Data(Speed);
+    osDelay(20000);
+  }
+  /* USER CODE END SendSpeed */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
