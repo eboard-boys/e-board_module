@@ -391,10 +391,10 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1000-1;
+  htim2.Init.Prescaler = 10000-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1600-1;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.Period = 0xffffffff;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV4;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
@@ -724,8 +724,9 @@ void SendSpeed(void *argument)
   for(;;)
   {
 	// Calculate Speed
-	char Speed[2] = "20";
-	Lora_Send_Data(Speed);
+	char formatted_speed[4] = "";
+	sprintf(formatted_speed, "%.1f", current_speed);
+	Lora_Send_Data(formatted_speed);
     osDelay(20000);
   }
   /* USER CODE END SendSpeed */
