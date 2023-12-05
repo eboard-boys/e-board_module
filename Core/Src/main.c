@@ -25,6 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include "spatial-lib/include/interface.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -67,12 +68,19 @@ osThreadId_t readThrottleHandle;
 const osThreadAttr_t readThrottle_attributes = {
   .name = "readThrottle",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for sendSpeed */
 osThreadId_t sendSpeedHandle;
 const osThreadAttr_t sendSpeed_attributes = {
   .name = "sendSpeed",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for accelUpdateTask */
+osThreadId_t accelUpdateTaskHandle;
+const osThreadAttr_t accelUpdateTask_attributes = {
+  .name = "accelUpdateTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
@@ -94,6 +102,7 @@ static void MX_USART1_UART_Init(void);
 void StartDefaultTask(void *argument);
 void ReadThrottle(void *argument);
 void SendSpeed(void *argument);
+void startAccelUpdateTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void Lora_Init(void);
@@ -172,6 +181,9 @@ int main(void)
 
   /* creation of sendSpeed */
   sendSpeedHandle = osThreadNew(SendSpeed, NULL, &sendSpeed_attributes);
+
+  /* creation of accelUpdateTask */
+  accelUpdateTaskHandle = osThreadNew(startAccelUpdateTask, NULL, &accelUpdateTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -636,6 +648,15 @@ void Parse_Recieve_Data(void)
 	char data[4];
 }
 
+// Get stored time in timer 2 in terms of seconds
+double get_timestep() {
+	long double cur_time = TIM2->CNT;
+	// Reset timer for next call
+	TIM2->CNT = 0;
+	// Division to make time in terms of seconds
+	cur_time /= 8000;
+	return (double)cur_time;
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -697,7 +718,6 @@ void ReadThrottle(void *argument)
 */
 /* USER CODE END Header_SendSpeed */
 void SendSpeed(void *argument)
-
 {
   /* USER CODE BEGIN SendSpeed */
   /* Infinite loop */
@@ -709,6 +729,24 @@ void SendSpeed(void *argument)
     osDelay(20000);
   }
   /* USER CODE END SendSpeed */
+}
+
+/* USER CODE BEGIN Header_startAccelUpdateTask */
+/**
+* @brief Function implementing the accelUpdateTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_startAccelUpdateTask */
+void startAccelUpdateTask(void *argument)
+{
+  /* USER CODE BEGIN startAccelUpdateTask */
+  init_spatial(&hi2c1, &huart2);
+  /* Infinite loop */
+  for(;;) {
+    update_spatial(get_timestep());
+  }
+  /* USER CODE END startAccelUpdateTask */
 }
 
 /**
