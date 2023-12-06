@@ -25,6 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +43,10 @@
 #define I2C_DELAY 50			 // I2C Delay 50ms
 #define STM_LORA_ADDRESS 24      // Address of the STM Lora chip
 #define ESP_LORA_ADDRESS 25      // Address of the ESP Lora chip
+#define Min_PWM 80			 	 // PWM signal at 80 is 0 throttle for the ESC
+#define Max_PWM 160		 		 // PWM signal at 160 is full throttle for the ESC
+#define Min_Throttle 0			 // 0 throttle
+#define Max_Throttle 80			 // 80 is the max throttle to add to the PWM
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -79,7 +84,8 @@ const osThreadAttr_t sendSpeed_attributes = {
 /* USER CODE BEGIN PV */
 char UART1_rxBuffer[25]; // Raw data from LORA RX
 char receive_data[4];    // Data stripped from LORA RX
-float throttle, speed;
+int throttle;
+float speed;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -140,8 +146,22 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  // Start the longboard by initializing the motor throttle to 0
+  char StartMsg[100];
+  sprintf(StartMsg, "\r\nStarting the LongBoard!\r\n");
+  HAL_UART_Transmit(&huart2, StartMsg, strlen(StartMsg), 50);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+  TIM3->CCR4 =  Min_PWM;
+  HAL_Delay(5000);
+
+  sprintf(StartMsg, "\r\nInitialized Throttle!\r\n");
+  HAL_UART_Transmit(&huart2, StartMsg, strlen(StartMsg), 50);
+  throttle = Min_Throttle;
+
   Lora_Init();
+  sprintf(StartMsg, "\r\nInitialized LORA!\r\n");
+  HAL_UART_Transmit(&huart2, StartMsg, strlen(StartMsg), 50);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -626,14 +646,74 @@ void Lora_Init(void)
 void Lora_Send_Data(char data[])
 {
 	// Combines message to be sent with the data passed in
-	char msg[100] = "";
-	sprintf(msg, "AT+SEND=%i,%i,%s\r\n", ESP_LORA_ADDRESS, strlen(data), data);
-	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	char LoraMsg[100];
+	sprintf(LoraMsg, "AT+SEND=%i,%i,%s\r\n", ESP_LORA_ADDRESS, strlen(data), data);
+	HAL_UART_Transmit(&huart1, LoraMsg, strlen(LoraMsg), 50);
+	osThreadSuspend(readThrottleHandle);
+	osDelay(200);
+	osThreadResume(readThrottleHandle);
+
+
+
 }
 
 void Parse_Recieve_Data(void)
 {
-	char data[4];
+	// Find the position of "T" in the array
+		bool good = true;
+
+	    char *start = strstr(UART1_rxBuffer, "T");
+
+	    // Check if "T" is found
+	    if (start != NULL)
+	    {
+	        // Find the position of the next comma after "S"
+	        char *end = strchr(start, ',');
+
+	        // Check if the comma is found
+	        if (end != NULL)
+	        {
+
+	        	char *error = strchr(receive_data, '-');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, '+');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, '=');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, ',');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, ' ');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+
+	        	if (good)
+	        	{
+	        		// Calculate the length of the substring
+	        		size_t length = end - start;
+
+	        		// Copy the substring to the buffer
+	        		strncpy(receive_data, start, length);
+
+	        		// Null-terminate the buffer
+	        		receive_data[length] = '\0';
+	        	}
+
+	        }
+	    }
 }
 
 /* USER CODE END 4 */
@@ -667,23 +747,28 @@ void ReadThrottle(void *argument)
 {
   /* USER CODE BEGIN ReadThrottle */
   /* Infinite loop */
+  char ThrottleMsg[50];
   for(;;)
   {
-	char msg[50];
-	char Rx_data[100];
-	int Throttle;
-	char oldMSG[25];
-	strncpy(oldMSG, UART1_rxBuffer, 25);
 	HAL_UART_Receive_IT(&huart1, UART1_rxBuffer, 25);
-	if (UART1_rxBuffer != oldMSG)
+	Parse_Recieve_Data();
+	HAL_UART_Transmit(&huart2, receive_data, strlen(receive_data), 25);
+
+	if (receive_data[0] == 'T')
 	{
-		HAL_UART_Transmit(&huart2, UART1_rxBuffer, 25, 100);
-		HAL_UART_Transmit(&huart2, oldMSG, 25, 100);
+		throttle = atoi(receive_data + 1);
+		//throttle -= 40;
+		if (throttle < 0)
+		{
+			throttle = 0;
+		}
+		if (throttle < 80)
+		{
+			TIM3->CCR4 =  80 + throttle;
+			sprintf(ThrottleMsg, " Set Throttle to : %i\r\n", throttle);
+			HAL_UART_Transmit(&huart2, ThrottleMsg, strlen(ThrottleMsg), I2C_DELAY);
+		}
 	}
-	Throttle = 80;
-	TIM3->CCR4 = Throttle;
-	sprintf(msg, "Set Throttle to : %i\r\n", Throttle);
-	HAL_UART_Transmit(&huart2, msg, strlen(msg), I2C_DELAY);
     osDelay(1);
   }
   /* USER CODE END ReadThrottle */
@@ -704,9 +789,9 @@ void SendSpeed(void *argument)
   for(;;)
   {
 	// Calculate Speed
-	char Speed[2] = "20";
+	char Speed[4] = "S20";
 	Lora_Send_Data(Speed);
-    osDelay(20000);
+    osDelay(1000);
   }
   /* USER CODE END SendSpeed */
 }
@@ -743,6 +828,11 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+	  if (throttle > 0)
+	  {
+		  throttle--;
+		  HAL_Delay(50);
+	  }
   }
   /* USER CODE END Error_Handler_Debug */
 }
