@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdbool.h>
+#include "spatial-lib/include/interface.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,12 +73,19 @@ osThreadId_t readThrottleHandle;
 const osThreadAttr_t readThrottle_attributes = {
   .name = "readThrottle",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for sendSpeed */
 osThreadId_t sendSpeedHandle;
 const osThreadAttr_t sendSpeed_attributes = {
   .name = "sendSpeed",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for accelUpdateTask */
+osThreadId_t accelUpdateTaskHandle;
+const osThreadAttr_t accelUpdateTask_attributes = {
+  .name = "accelUpdateTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
@@ -100,6 +108,7 @@ static void MX_USART1_UART_Init(void);
 void StartDefaultTask(void *argument);
 void ReadThrottle(void *argument);
 void SendSpeed(void *argument);
+void startAccelUpdateTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void Lora_Init(void);
@@ -192,6 +201,9 @@ int main(void)
 
   /* creation of sendSpeed */
   sendSpeedHandle = osThreadNew(SendSpeed, NULL, &sendSpeed_attributes);
+  
+  /* creation of accelUpdateTask */
+  accelUpdateTaskHandle = osThreadNew(startAccelUpdateTask, NULL, &accelUpdateTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -399,10 +411,10 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1000-1;
+  htim2.Init.Prescaler = 10000-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1600-1;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.Period = 0xffffffff;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV4;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
@@ -716,6 +728,15 @@ void Parse_Recieve_Data(void)
 	    }
 }
 
+// Get stored time in timer 2 in terms of seconds
+double get_timestep() {
+	long double cur_time = TIM2->CNT;
+	// Reset timer for next call
+	TIM2->CNT = 0;
+	// Division to make time in terms of seconds
+	cur_time /= 8000;
+	return (double)cur_time;
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -789,11 +810,31 @@ void SendSpeed(void *argument)
   for(;;)
   {
 	// Calculate Speed
-	char Speed[4] = "S20";
-	Lora_Send_Data(Speed);
-    osDelay(1000);
+	char formatted_speed[4] = "";
+	sprintf(formatted_speed, "%.1f", current_speed);
+	Lora_Send_Data(formatted_speed);
+  osDelay(1000);
   }
   /* USER CODE END SendSpeed */
+}
+
+
+/* USER CODE BEGIN Header_startAccelUpdateTask */
+/**
+* @brief Function implementing the accelUpdateTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_startAccelUpdateTask */
+void startAccelUpdateTask(void *argument)
+{
+  /* USER CODE BEGIN startAccelUpdateTask */
+  init_spatial(&hi2c1, &huart2);
+  /* Infinite loop */
+  for(;;) {
+    update_spatial(get_timestep());
+  }
+  /* USER CODE END startAccelUpdateTask */
 }
 
 /**
