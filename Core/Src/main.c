@@ -117,6 +117,7 @@ void startAccelUpdateTask(void *argument);
 void Lora_Init(void);
 void Lora_Send_Data(char data[]);
 void Parse_Recieve_Data(void);
+void Smooth_Speed(int tempThrottle);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -767,7 +768,8 @@ void buffer_print(void* buffer, const char* msg) {
 	HAL_UART_Transmit(&huart2, modded_buffer, strlen(modded_buffer), HAL_MAX_DELAY);
 }
 
-HAL_StatusTypeDef receive_lora_packet() {
+HAL_StatusTypeDef receive_lora_packet()
+{
 	bool received_new_packet = false;
 	while (!received_new_packet) {
 	    HAL_UART_Receive_DMA(&huart1, (uint8_t*)UART1_rxBuffer, 1);
@@ -790,6 +792,42 @@ HAL_StatusTypeDef receive_lora_packet() {
 //    }
     UART1_rxBuffer[0] = 0;
 	return HAL_OK;
+}
+
+void Smooth_Speed(int tempThrottle)
+{
+	if (tempThrottle < Min_Throttle) {
+		tempThrottle = Min_Throttle;
+	}
+	else if (tempThrottle > Max_Throttle) {
+		tempThrottle = Max_Throttle;
+	}
+	int diffThrottle = throttle - tempThrottle;
+	if (diffThrottle < 1 && diffThrottle > -1)
+	{
+		return;
+	}
+
+	if (diffThrottle > 1)
+	{
+		while (throttle < tempThrottle)
+		{
+			throttle += 1;
+			TIM3->CCR4 =  Min_PWM + throttle;
+			HAL_Delay(100);
+		}
+	}
+	else if (diffThrottle < 1)
+	{
+		while (throttle > tempThrottle)
+		{
+			throttle -= 1;
+			TIM3->CCR4 =  Min_PWM + throttle;
+			HAL_Delay(100);
+		}
+	}
+	return;
+
 }
 /* USER CODE END 4 */
 
@@ -831,16 +869,11 @@ void ReadThrottle(void *argument)
     receive_lora_packet();
 
 	if (receive_data[0] == 'T') {
-		throttle = atoi(receive_data + 1);
-		//throttle -= 40;
-		if (throttle < 0) {
-			throttle = 0;
-		}
-		if (throttle < 80) {
-			TIM3->CCR4 =  80 + throttle;
-			sprintf(ThrottleMsg, " Set Throttle to : %i\r\n", throttle);
-			HAL_UART_Transmit(&huart2, ThrottleMsg, strlen(ThrottleMsg), I2C_DELAY);
-		}
+		int tempThrottle = atoi(receive_data + 1);
+		Smooth_Speed(tempThrottle);
+		sprintf(ThrottleMsg, "Set Throttle to: %i", throttle);
+		Lora_Send_Data(ThrottleMsg);
+
 	}
   }
   /* USER CODE END ReadThrottle */
