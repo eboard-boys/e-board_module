@@ -169,6 +169,11 @@ int main(void)
   TIM3->CCR4 =  Min_PWM;
   HAL_Delay(5000);
 
+  init_spatial(&hi2c1, &huart2);
+  sprintf(StartMsg, "\r\nInitialized Accelerometer!\r\n");
+  HAL_UART_Transmit(&huart2, StartMsg, strlen(StartMsg), 50);
+
+
   sprintf(StartMsg, "\r\nInitialized Throttle!\r\n");
   HAL_UART_Transmit(&huart2, StartMsg, strlen(StartMsg), 50);
   throttle = Min_Throttle;
@@ -814,7 +819,7 @@ void Smooth_Speed(int tempThrottle)
 		{
 			throttle += 1;
 			TIM3->CCR4 =  Min_PWM + throttle;
-			HAL_Delay(100);
+//			HAL_Delay(100);
 		}
 	}
 	else if (diffThrottle < 1)
@@ -823,7 +828,7 @@ void Smooth_Speed(int tempThrottle)
 		{
 			throttle -= 1;
 			TIM3->CCR4 =  Min_PWM + throttle;
-			HAL_Delay(100);
+//			HAL_Delay(100);
 		}
 	}
 	return;
@@ -911,7 +916,6 @@ void SendSpeed(void *argument)
 void startAccelUpdateTask(void *argument)
 {
   /* USER CODE BEGIN startAccelUpdateTask */
-  init_spatial(&hi2c1, &huart2);
   /* Infinite loop */
   for(;;) {
     update_spatial(get_timestep());
