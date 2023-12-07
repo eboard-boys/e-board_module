@@ -48,7 +48,7 @@
 #define Max_PWM 160		 		 // PWM signal at 160 is full throttle for the ESC
 #define Min_Throttle 0			 // 0 throttle
 #define Max_Throttle 80			 // 80 is the max throttle to add to the PWM
-#define LORA_BUFFER_SIZE 100
+#define LORA_BUFFER_SIZE 105
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -746,7 +746,7 @@ void Parse_Recieve_Data(void)
 	// Find the position of "T" in the array
 		bool good = true;
 
-	    char *start = strstr(UART1_rxBuffer, "T");
+	    char *start = strrchr(UART1_rxBuffer, 'T');
 
 	    // Check if "T" is found
 	    if (start != NULL)
@@ -831,6 +831,8 @@ HAL_StatusTypeDef receive_lora_packet()
 //    buffer_print(UART1_rxBuffer, "rcv portion");
     // Packets MUST be from address 25 and have a length of 3 bytes or they will be discarded
     UART1_rxBuffer[LORA_BUFFER_SIZE - 1] = 0;
+    if (UART1_rxBuffer[LORA_BUFFER_SIZE - 2] == 'T')
+    	UART1_rxBuffer[LORA_BUFFER_SIZE - 2] = 0;
 	buffer_print(UART1_rxBuffer, "rxBuffer");
 //    if (strncmp(UART1_rxBuffer, "RCV=25,", 7)) {
 //    	return HAL_ERROR;
@@ -940,7 +942,7 @@ void ReadThrottle(void *argument)
 		int tempThrottle = atoi(receive_data + 1);
 		Smooth_Speed(tempThrottle);
 		sprintf(ThrottleMsg, "Set Throttle to: %i", throttle);
-		Lora_Send_Data(ThrottleMsg);
+		HAL_UART_Transmit(&huart2, ThrottleMsg, strlen(ThrottleMsg), HAL_MAX_DELAY);
 
 	}
   }
@@ -962,10 +964,10 @@ void SendSpeed(void *argument)
   {
 	// Calculate Speed
 	char formatted_speed[4] = "";
-	sprintf(formatted_speed, "%.1f", current_speed);
+	sprintf(formatted_speed, "S%.1f", current_speed);
 	Lora_Send_Data(formatted_speed);
 	char formatted_trip[10] = "";
-	sprintf(formatted_trip, "%d", current_distance);
+	sprintf(formatted_trip, "D%.0f", current_distance);
 	Lora_Send_Data(formatted_trip);
   osDelay(1000);
   }
