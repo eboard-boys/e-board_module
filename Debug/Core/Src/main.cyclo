@@ -10,7 +10,7 @@
 ../Core/Src/main.c:595:13:MX_GPIO_Init	1
 ../Core/Src/main.c:629:6:Lora_Init	1
 ../Core/Src/main.c:679:6:Lora_Send_Data	1
-../Core/Src/main.c:693:6:Parse_Recieve_Data	5
+../Core/Src/main.c:693:6:Parse_Recieve_Data	10
 ../Core/Src/main.c:756:8:get_timestep	1
 ../Core/Src/main.c:765:6:buffer_print	1
 ../Core/Src/main.c:771:19:receive_lora_packet	3

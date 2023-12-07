@@ -48,7 +48,7 @@
 #define Max_PWM 160		 		 // PWM signal at 160 is full throttle for the ESC
 #define Min_Throttle 0			 // 0 throttle
 #define Max_Throttle 80			 // 80 is the max throttle to add to the PWM
-#define LORA_BUFFER_SIZE 25
+#define LORA_BUFFER_SIZE 100
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -708,31 +708,31 @@ void Parse_Recieve_Data(void)
 	        if (end != NULL)
 	        {
 
-//	        	char *error = strchr(receive_data, '-');
-//	        	if (error != NULL)
-//	        	{
-//	        		good = false;
-//	        	}
-//	        	error = strchr(receive_data, '+');
-//	        	if (error != NULL)
-//	        	{
-//	        		good = false;
-//	        	}
-//	        	error = strchr(receive_data, '=');
-//	        	if (error != NULL)
-//	        	{
-//	        		good = false;
-//	        	}
-//	        	error = strchr(receive_data, ',');
-//	        	if (error != NULL)
-//	        	{
-//	        		good = false;
-//	        	}
-//	        	error = strchr(receive_data, ' ');
-//	        	if (error != NULL)
-//	        	{
-//	        		good = false;
-//	        	}
+	        	char *error = strchr(receive_data, '-');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, '+');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, '=');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, ',');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
+	        	error = strchr(receive_data, ' ');
+	        	if (error != NULL)
+	        	{
+	        		good = false;
+	        	}
 
 	        	if (good)
 	        	{
