@@ -60,6 +60,7 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart1_rx;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -99,6 +100,7 @@ float speed;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_ADC1_Init(void);
@@ -148,6 +150,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_TIM3_Init();
   MX_ADC1_Init();
@@ -201,7 +204,7 @@ int main(void)
 
   /* creation of sendSpeed */
   sendSpeedHandle = osThreadNew(SendSpeed, NULL, &sendSpeed_attributes);
-  
+
   /* creation of accelUpdateTask */
   accelUpdateTaskHandle = osThreadNew(startAccelUpdateTask, NULL, &accelUpdateTask_attributes);
 
@@ -567,6 +570,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -771,7 +790,8 @@ void ReadThrottle(void *argument)
   char ThrottleMsg[50];
   for(;;)
   {
-	HAL_UART_Receive_IT(&huart1, UART1_rxBuffer, 25);
+//	HAL_UART_Receive_IT(&huart1, UART1_rxBuffer, 25);
+    HAL_UART_Receive_DMA(&huart1, UART1_rxBuffer, 25);
 	Parse_Recieve_Data();
 	HAL_UART_Transmit(&huart2, receive_data, strlen(receive_data), 25);
 
@@ -790,7 +810,7 @@ void ReadThrottle(void *argument)
 			HAL_UART_Transmit(&huart2, ThrottleMsg, strlen(ThrottleMsg), I2C_DELAY);
 		}
 	}
-    osDelay(1);
+//    osDelay(1);
   }
   /* USER CODE END ReadThrottle */
 }
@@ -803,7 +823,6 @@ void ReadThrottle(void *argument)
 */
 /* USER CODE END Header_SendSpeed */
 void SendSpeed(void *argument)
-
 {
   /* USER CODE BEGIN SendSpeed */
   /* Infinite loop */
@@ -817,7 +836,6 @@ void SendSpeed(void *argument)
   }
   /* USER CODE END SendSpeed */
 }
-
 
 /* USER CODE BEGIN Header_startAccelUpdateTask */
 /**
