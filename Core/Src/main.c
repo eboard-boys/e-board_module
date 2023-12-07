@@ -693,7 +693,7 @@ void Parse_Recieve_Data(void)
 	// Find the position of "T" in the array
 		bool good = true;
 
-	    char *start = strstr(UART1_rxBuffer, "T");
+	    char *start = strrchr(UART1_rxBuffer, 'T');
 
 	    // Check if "T" is found
 	    if (start != NULL)
