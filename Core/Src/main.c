@@ -55,6 +55,7 @@
 ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c1;
+DMA_HandleTypeDef hdma_i2c1_rx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -589,6 +590,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+  /* DMA1_Channel7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 
 }
 
@@ -904,6 +908,9 @@ void SendSpeed(void *argument)
 	char formatted_speed[4] = "";
 	sprintf(formatted_speed, "%.1f", current_speed);
 	Lora_Send_Data(formatted_speed);
+	char formatted_trip[10] = "";
+	sprintf(formatted_trip, "%d", current_distance);
+	Lora_Send_Data(formatted_trip);
   osDelay(1000);
   }
   /* USER CODE END SendSpeed */
