@@ -48,6 +48,7 @@
 #define Max_PWM 160		 		 // PWM signal at 160 is full throttle for the ESC
 #define Min_Throttle 0			 // 0 throttle
 #define Max_Throttle 80			 // 80 is the max throttle to add to the PWM
+#define LORA_BUFFER_SIZE 25
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -91,7 +92,7 @@ const osThreadAttr_t accelUpdateTask_attributes = {
   .priority = (osPriority_t) osPriorityLow,
 };
 /* USER CODE BEGIN PV */
-char UART1_rxBuffer[25]; // Raw data from LORA RX
+char UART1_rxBuffer[LORA_BUFFER_SIZE]; // Raw data from LORA RX
 char receive_data[4];    // Data stripped from LORA RX
 int throttle;
 float speed;
@@ -698,6 +699,7 @@ void Parse_Recieve_Data(void)
 	    // Check if "T" is found
 	    if (start != NULL)
 	    {
+	    	buffer_print(start, "str from start of parse");
 	        // Find the position of the next comma after "S"
 	        char *end = strchr(start, ',');
 
@@ -705,36 +707,38 @@ void Parse_Recieve_Data(void)
 	        if (end != NULL)
 	        {
 
-	        	char *error = strchr(receive_data, '-');
-	        	if (error != NULL)
-	        	{
-	        		good = false;
-	        	}
-	        	error = strchr(receive_data, '+');
-	        	if (error != NULL)
-	        	{
-	        		good = false;
-	        	}
-	        	error = strchr(receive_data, '=');
-	        	if (error != NULL)
-	        	{
-	        		good = false;
-	        	}
-	        	error = strchr(receive_data, ',');
-	        	if (error != NULL)
-	        	{
-	        		good = false;
-	        	}
-	        	error = strchr(receive_data, ' ');
-	        	if (error != NULL)
-	        	{
-	        		good = false;
-	        	}
+//	        	char *error = strchr(receive_data, '-');
+//	        	if (error != NULL)
+//	        	{
+//	        		good = false;
+//	        	}
+//	        	error = strchr(receive_data, '+');
+//	        	if (error != NULL)
+//	        	{
+//	        		good = false;
+//	        	}
+//	        	error = strchr(receive_data, '=');
+//	        	if (error != NULL)
+//	        	{
+//	        		good = false;
+//	        	}
+//	        	error = strchr(receive_data, ',');
+//	        	if (error != NULL)
+//	        	{
+//	        		good = false;
+//	        	}
+//	        	error = strchr(receive_data, ' ');
+//	        	if (error != NULL)
+//	        	{
+//	        		good = false;
+//	        	}
 
 	        	if (good)
 	        	{
 	        		// Calculate the length of the substring
 	        		size_t length = end - start;
+	        		if (length > 4)
+	        			return;
 
 	        		// Copy the substring to the buffer
 	        		strncpy(receive_data, start, length);
@@ -755,6 +759,37 @@ double get_timestep() {
 	// Division to make time in terms of seconds
 	cur_time /= 8000;
 	return (double)cur_time;
+}
+
+void buffer_print(void* buffer, const char* msg) {
+	uint8_t modded_buffer[strlen(buffer) + strlen(msg)];
+	sprintf(modded_buffer, "%s: %s\r\n", msg, buffer);
+	HAL_UART_Transmit(&huart2, modded_buffer, strlen(modded_buffer), HAL_MAX_DELAY);
+}
+
+HAL_StatusTypeDef receive_lora_packet() {
+	bool received_new_packet = false;
+	while (!received_new_packet) {
+	    HAL_UART_Receive_DMA(&huart1, (uint8_t*)UART1_rxBuffer, 1);
+	    if (UART1_rxBuffer[0] == '+')
+	    	break;
+	}
+    HAL_UART_Receive_DMA(&huart1, (uint8_t*)UART1_rxBuffer, LORA_BUFFER_SIZE - 2);
+//    buffer_print(UART1_rxBuffer, "rcv portion");
+    // Packets MUST be from address 25 and have a length of 3 bytes or they will be discarded
+    UART1_rxBuffer[LORA_BUFFER_SIZE - 1] = 0;
+	buffer_print(UART1_rxBuffer, "rxBuffer");
+//    if (strncmp(UART1_rxBuffer, "RCV=25,", 7)) {
+//    	return HAL_ERROR;
+//    }
+    Parse_Recieve_Data();
+    buffer_print(receive_data, "data");
+//    while (UART1_rxBuffer[0] != '\n') {
+//    	HAL_UART_Receive_DMA(&huart1, (uint8_t*)UART1_rxBuffer, 1);
+////        buffer_print(UART1_rxBuffer, "garbage char");
+//    }
+    UART1_rxBuffer[0] = 0;
+	return HAL_OK;
 }
 /* USER CODE END 4 */
 
@@ -788,29 +823,25 @@ void ReadThrottle(void *argument)
   /* USER CODE BEGIN ReadThrottle */
   /* Infinite loop */
   char ThrottleMsg[50];
-  for(;;)
-  {
+  for(;;) {
 //	HAL_UART_Receive_IT(&huart1, UART1_rxBuffer, 25);
-    HAL_UART_Receive_DMA(&huart1, UART1_rxBuffer, 25);
-	Parse_Recieve_Data();
-	HAL_UART_Transmit(&huart2, receive_data, strlen(receive_data), 25);
+    
+//	Parse_Recieve_Data();
+//	HAL_UART_Transmit(&huart2, receive_data, strlen(receive_data), 25);
+    receive_lora_packet();
 
-	if (receive_data[0] == 'T')
-	{
+	if (receive_data[0] == 'T') {
 		throttle = atoi(receive_data + 1);
 		//throttle -= 40;
-		if (throttle < 0)
-		{
+		if (throttle < 0) {
 			throttle = 0;
 		}
-		if (throttle < 80)
-		{
+		if (throttle < 80) {
 			TIM3->CCR4 =  80 + throttle;
 			sprintf(ThrottleMsg, " Set Throttle to : %i\r\n", throttle);
 			HAL_UART_Transmit(&huart2, ThrottleMsg, strlen(ThrottleMsg), I2C_DELAY);
 		}
 	}
-//    osDelay(1);
   }
   /* USER CODE END ReadThrottle */
 }
