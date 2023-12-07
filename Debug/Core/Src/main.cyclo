@@ -15,9 +15,9 @@
 ../Core/Src/main.c:770:6:buffer_print	1
 ../Core/Src/main.c:776:19:receive_lora_packet	3
 ../Core/Src/main.c:802:6:Smooth_Speed	9
-../Core/Src/main.c:846:6:StartDefaultTask	1
-../Core/Src/main.c:864:6:ReadThrottle	2
-../Core/Src/main.c:894:6:SendSpeed	1
-../Core/Src/main.c:916:6:startAccelUpdateTask	1
-../Core/Src/main.c:934:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/main.c:951:6:Error_Handler	2
+../Core/Src/main.c:849:6:StartDefaultTask	1
+../Core/Src/main.c:867:6:ReadThrottle	2
+../Core/Src/main.c:897:6:SendSpeed	1
+../Core/Src/main.c:919:6:startAccelUpdateTask	1
+../Core/Src/main.c:937:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/main.c:954:6:Error_Handler	2

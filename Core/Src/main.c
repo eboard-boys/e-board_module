@@ -801,14 +801,17 @@ HAL_StatusTypeDef receive_lora_packet()
 
 void Smooth_Speed(int tempThrottle)
 {
+	// If the tempThrottle is above or below Max or Min set it to the Max or Min
 	if (tempThrottle < Min_Throttle) {
 		tempThrottle = Min_Throttle;
 	}
 	else if (tempThrottle > Max_Throttle) {
 		tempThrottle = Max_Throttle;
 	}
-	int diffThrottle = throttle - tempThrottle;
-	if (diffThrottle < 1 && diffThrottle > -1)
+
+	// see if the difference is bigger than 1 then smooth the throttle increase or decrease
+	int diffThrottle = tempThrottle - throttle;
+	if (diffThrottle >= -1 && diffThrottle <= 1)
 	{
 		return;
 	}
@@ -819,7 +822,7 @@ void Smooth_Speed(int tempThrottle)
 		{
 			throttle += 1;
 			TIM3->CCR4 =  Min_PWM + throttle;
-//			HAL_Delay(100);
+			HAL_Delay(100);
 		}
 	}
 	else if (diffThrottle < 1)
@@ -828,7 +831,7 @@ void Smooth_Speed(int tempThrottle)
 		{
 			throttle -= 1;
 			TIM3->CCR4 =  Min_PWM + throttle;
-//			HAL_Delay(100);
+			HAL_Delay(100);
 		}
 	}
 	return;
