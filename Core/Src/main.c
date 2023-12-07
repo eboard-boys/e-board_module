@@ -59,6 +59,7 @@ DMA_HandleTypeDef hdma_i2c1_rx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim7;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -109,6 +110,7 @@ static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM7_Init(void);
 void StartDefaultTask(void *argument);
 void ReadThrottle(void *argument);
 void SendSpeed(void *argument);
@@ -119,6 +121,7 @@ void Lora_Init(void);
 void Lora_Send_Data(char data[]);
 void Parse_Recieve_Data(void);
 void Smooth_Speed(int tempThrottle);
+void Error_Slow_Down(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -160,6 +163,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_USART1_UART_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 
   // Start the longboard by initializing the motor throttle to 0
@@ -508,6 +512,44 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 65000-1;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 6000-1;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -800,6 +842,8 @@ HAL_StatusTypeDef receive_lora_packet()
 ////        buffer_print(UART1_rxBuffer, "garbage char");
 //    }
     UART1_rxBuffer[0] = 0;
+    TIM2->CNT = 0;
+
 	return HAL_OK;
 }
 
@@ -811,6 +855,10 @@ void Smooth_Speed(int tempThrottle)
 	}
 	else if (tempThrottle > Max_Throttle) {
 		tempThrottle = Max_Throttle;
+	}
+	else if (tempThrottle == throttle)
+	{
+
 	}
 
 	// see if the difference is bigger than 1 then smooth the throttle increase or decrease
@@ -840,6 +888,14 @@ void Smooth_Speed(int tempThrottle)
 	}
 	return;
 
+}
+void Error_Slow_Down(void)
+{
+	  while (throttle > 0)
+	  {
+		  throttle--;
+		  HAL_Delay(50);
+	  }
 }
 /* USER CODE END 4 */
 
@@ -944,7 +1000,9 @@ void startAccelUpdateTask(void *argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-
+  if (htim->Instance == TIM7) {
+	Error_Slow_Down();
+  }
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM6) {
     HAL_IncTick();
